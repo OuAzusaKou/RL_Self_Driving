@@ -25,23 +25,30 @@ class CarEnv(gym.Env):
     def __init__(self, seconds_per_episode=None, playing=False):
         self.client = carla.Client("127.0.0.1", 2000)
         self.client.set_timeout(200.0)
-        # self.world = self.client.load_world('Town06')
+        #self.world = self.client.load_world('RaceTrack')
         self.world = self.client.get_world()
+        settings = self.world.get_settings()
+        settings.no_rendering_mode = False
+        self.world.apply_settings(settings)
         self.blueprint_library = self.world.get_blueprint_library()
         self.model_3 = self.blueprint_library.filter("model3")[0]
-        self._max_episode_steps = 50
-
-        self.action_space = spaces.Box(low=np.array([0.0, -1.0, 0.0]), high=np.array([1.0, 1.0, 1.0]), dtype=np.float32)
+        self._max_episode_steps = 500
+        self.step_num = 0
+        self.action_space = spaces.Box(low=np.array([-1.0]), high=np.array([1.0]), dtype=np.float32)
         # The observation will be the coordinate of the agent
         # this can be described both by Discrete and Box space
         self.observation_space = spaces.Box(low=0, high=255,
                                             shape=(3, self.im_height, self.im_width), dtype=np.uint8)
     def reset(self):
         # def reset(self, i):
+        self.dis_buf = 0
         self.world=self.client.reload_world()
+        settings = self.world.get_settings()
+        settings.no_rendering_mode = False
+        self.world.apply_settings(settings)
         self.blueprint_library = self.world.get_blueprint_library()
         self.model_3 = self.blueprint_library.filter("model3")[0]
-
+        self.step_num = 0
         self.collision_hist = []
         self.actor_list = []
 
@@ -107,8 +114,8 @@ class CarEnv(gym.Env):
         # 深度图
         i4 = i2[:, :, :]
         if self.SHOW_CAM:
-            cv2.imshow("", i3)
-            # cv2.imwrite("")
+            #cv2.imshow("", i2[:,:,3])
+            #cv2.imwrite("img.png",i2[:,:,:3])
             cv2.waitKey(1)
         self.front_camera = i3
         # return self.front_camera
@@ -126,13 +133,9 @@ class CarEnv(gym.Env):
     # 5: 'brake', 6: 'brake_left', 7: 'brake_right'
     def step(self, action):
         info = {}
+        self.step_num += 1
         print(action)
-        if action[0] < 0:
-            action[0] = 0.0
-        action[0] = 1.0
-        if action[2] < 0:
-            action[2] = 0.0
-        action[2] = 0.0
+
         # if action == 0:  # 直行
         #     self.vehicle.apply_control(carla.VehicleControl(throttle=1.0, steer=0, brake=0))
         # elif action == 1: # 左转
@@ -149,14 +152,14 @@ class CarEnv(gym.Env):
         #     self.vehicle.apply_control(carla.VehicleControl(throttle=0, steer=0.5 * self.STEER_AMT, brake=0.5))
         # elif action == 7:  # 刹车
         #     self.vehicle.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1.0))
-        self.vehicle.apply_control(carla.VehicleControl(throttle=float(action[0]), steer=float(action[1]), brake = float(action[2])))
+        self.vehicle.apply_control(carla.VehicleControl(throttle=float(1.0), steer=float(action[0]), brake = float(0.0)))
 
 
 
         v = self.vehicle.get_velocity()
         kmh = int(3.6 * math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2))
         location = self.vehicle.get_location()
-        dis = int(math.sqrt(location.x ** 2 + location.y ** 2 + location.z ** 2))
+        dis = (math.sqrt(location.x ** 2 + location.y ** 2 + location.z ** 2))
         if len(self.collision_hist) != 0:
             done = True
             reward = -1
@@ -165,16 +168,20 @@ class CarEnv(gym.Env):
             reward = -1
         else:
             done = False
-            reward = dis
-        if self.episode_start + SECONDS_PER_EPISODE < time.time():
+            reward = dis - self.dis_buf
+            self.dis_buf = dis
+
+        if self.step_num > self._max_episode_steps:
             done = True
-        #print(reward)
+        reward = reward * 10
+        print(reward)
+       #print(self.front_camera)
         return self.front_camera, reward, done, info
 
 FPS = 30
 
-# env = CarEnv()
-# check_env(env)
+env = CarEnv()
+check_env(env)
 
 # sate = env.reset()
 # while True:

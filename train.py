@@ -35,12 +35,12 @@ def parse_args():
     parser.add_argument('--replay_buffer_capacity', default=100000, type=int)
     # train
     parser.add_argument('--agent', default='curl_sac', type=str)
-    parser.add_argument('--init_steps', default=1000, type=int)
+    parser.add_argument('--init_steps', default=500, type=int)
     parser.add_argument('--num_train_steps', default=1000000, type=int)
-    parser.add_argument('--batch_size', default=32, type=int)
+    parser.add_argument('--batch_size', default=1, type=int)
     parser.add_argument('--hidden_dim', default=1024, type=int)
     # eval
-    parser.add_argument('--eval_freq', default=1000, type=int)
+    parser.add_argument('--eval_freq', default=200, type=int)
     parser.add_argument('--num_eval_episodes', default=1, type=int)
     # critic
     parser.add_argument('--critic_lr', default=1e-3, type=float)
@@ -58,7 +58,7 @@ def parse_args():
     parser.add_argument('--encoder_feature_dim', default=50, type=int)
     parser.add_argument('--encoder_lr', default=1e-3, type=float)
     parser.add_argument('--encoder_tau', default=0.05, type=float)
-    parser.add_argument('--num_layers', default=4, type=int)
+    parser.add_argument('--num_layers', default=2, type=int)
     parser.add_argument('--num_filters', default=32, type=int)
     parser.add_argument('--curl_latent_dim', default=128, type=int)
     # sac
@@ -119,6 +119,7 @@ def evaluate(env, agent, video, num_episodes, L, step, args,model_dir):
             best_ep_reward = new_best_ep_reward
             if args.save_model:
                 agent.save_curl(model_dir, step)
+                agent.save(model_dir,step)
 
         L.log('eval/' + prefix + 'mean_episode_reward', mean_ep_reward, step)
         L.log('eval/' + prefix + 'best_episode_reward', best_ep_reward, step)
@@ -191,8 +192,11 @@ def main():
     ts = time.gmtime() 
     ts = time.strftime("%m-%d", ts)    
     env_name = args.domain_name + '-' + args.task_name
-    exp_name = env_name + '-' + ts + '-im' + str(args.image_size) +'-b'  \
-    + str(args.batch_size) + '-s' + str(args.seed)  + '-' + args.encoder_type
+    # exp_name = env_name + '-' + ts + '-im' + str(args.image_size) +'-b'  \
+    # + str(args.batch_size) + '-s' + str(args.seed)  + '-' + args.encoder_type
+    exp_name = env_name + '-im' + str(args.image_size) + '-b' \
+               + str(args.batch_size)  + '-' + args.encoder_type
+
     args.work_dir = args.work_dir + '/'  + exp_name
 
     utils.make_dir(args.work_dir)
@@ -206,7 +210,7 @@ def main():
         json.dump(vars(args), f, sort_keys=True, indent=4)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+    #device = torch.device('cpu')
     action_shape = env.action_space.shape
 
     if args.encoder_type == 'pixel':
@@ -236,7 +240,7 @@ def main():
 
     episode, episode_reward, done = 0, 0, True
     start_time = time.time()
-
+    update_step = 1
     for step in range(args.num_train_steps):
         # evaluate agent periodically
 
@@ -259,8 +263,15 @@ def main():
                     L.dump(step)
                 start_time = time.time()
                 print('episode_reward',episode_reward)
-            if step % args.log_interval == 0:
+            #if step % args.log_interval == 0:
                 L.log('train/episode_reward', episode_reward, step)
+            if step >= args.init_steps:
+                num_updates = 25
+                for _ in range(num_updates):
+
+                    agent.update(replay_buffer, L, update_step)
+
+                    update_step += 1
 
             obs = env.reset()
             done = False
@@ -278,10 +289,7 @@ def main():
                 action = agent.sample_action(obs)
 
         # run training update
-        if step >= args.init_steps:
-            num_updates = 1 
-            for _ in range(num_updates):
-                agent.update(replay_buffer, L, step)
+
 
         next_obs, reward, done, _ = env.step(action)
 
@@ -297,9 +305,10 @@ def main():
 
         obs = next_obs
         episode_step += 1
+        print(episode_step)
 
 
 if __name__ == '__main__':
-    torch.multiprocessing.set_start_method('spawn')
-
+    #torch.multiprocessing.set_start_method('spawn')
+    torch.cuda.empty_cache()
     main()

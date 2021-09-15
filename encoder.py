@@ -23,7 +23,7 @@ class PixelEncoder(nn.Module):
         self.obs_shape = obs_shape
         self.feature_dim = feature_dim
         self.num_layers = num_layers
-
+        print('obs',obs_shape[0])
         self.convs = nn.ModuleList(
             [nn.Conv2d(obs_shape[0], num_filters, 3, stride=2)]
         )
@@ -101,11 +101,11 @@ class IdentityEncoder(nn.Module):
     def __init__(self, obs_shape, feature_dim, num_layers, num_filters,*args):
         super().__init__()
 
-        assert len(obs_shape) == 1
-        self.feature_dim = obs_shape[0]
+        #assert len(obs_shape) == 1
+        self.feature_dim = obs_shape[0]*obs_shape[1]*obs_shape[2]
 
     def forward(self, obs, detach=False):
-        return obs
+        return obs.reshape((-1))
 
     def copy_conv_weights_from(self, source):
         pass
